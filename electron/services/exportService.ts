@@ -11,6 +11,7 @@ import { imageDecryptService } from './imageDecryptService'
 import { chatService } from './chatService'
 import { videoService } from './videoService'
 import { voiceTranscribeService } from './voiceTranscribeService'
+import { exportRecordService } from './exportRecordService'
 import { EXPORT_HTML_STYLES } from './exportHtmlStyles'
 import { LRUCache } from '../utils/LRUCache.js'
 
@@ -1492,6 +1493,101 @@ class ExportService {
         .replace(/&#39;/g, "'")
     }
     return content
+  }
+
+  private extractFinderFeedDesc(content: string): string {
+    if (!content) return ''
+    const match = /<finderFeed[\s\S]*?<desc>([\s\S]*?)<\/desc>/i.exec(content)
+    if (!match) return ''
+    return match[1].replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '').trim()
+  }
+
+  private extractArkmeAppMessageMeta(content: string, localType: number): Record<string, any> | null {
+    if (!content) return null
+
+    const normalized = this.normalizeAppMessageContent(content)
+    const looksLikeAppMsg = localType === 49 || normalized.includes('<appmsg') || normalized.includes('<msg>')
+    const xmlType = this.extractXmlValue(normalized, 'type')
+    const isFinder =
+      xmlType === '51' ||
+      normalized.includes('<finder') ||
+      normalized.includes('finderusername') ||
+      normalized.includes('finderobjectid')
+
+    if (!looksLikeAppMsg && !isFinder) return null
+
+    let appMsgKind: string | undefined
+    if (isFinder) {
+      appMsgKind = 'finder'
+    } else if (xmlType === '2001') {
+      appMsgKind = 'red-packet'
+    } else if (xmlType === '3') {
+      appMsgKind = 'music'
+    } else if (xmlType === '33' || xmlType === '36') {
+      appMsgKind = 'miniapp'
+    } else if (xmlType === '6') {
+      appMsgKind = 'file'
+    } else if (xmlType === '19') {
+      appMsgKind = 'chat-record'
+    } else if (xmlType === '2000') {
+      appMsgKind = 'transfer'
+    } else if (xmlType === '87') {
+      appMsgKind = 'announcement'
+    } else if (xmlType === '57') {
+      appMsgKind = 'quote'
+    } else if (xmlType === '5' || xmlType === '49') {
+      appMsgKind = 'link'
+    } else if (looksLikeAppMsg) {
+      appMsgKind = 'card'
+    }
+
+    const meta: Record<string, any> = {}
+    if (xmlType) meta.appMsgType = xmlType
+    if (appMsgKind) meta.appMsgKind = appMsgKind
+
+    if (!isFinder) {
+      return Object.keys(meta).length > 0 ? meta : null
+    }
+
+    const rawTitle = this.extractXmlValue(normalized, 'title')
+    const finderFeedDesc = this.extractFinderFeedDesc(normalized)
+    const finderTitle = (!rawTitle || rawTitle.includes('不支持')) ? finderFeedDesc : rawTitle
+    const finderDesc = this.extractXmlValue(normalized, 'des') || this.extractXmlValue(normalized, 'desc')
+    const finderUsername =
+      this.extractXmlValue(normalized, 'finderusername') ||
+      this.extractXmlValue(normalized, 'finder_username') ||
+      this.extractXmlValue(normalized, 'finderuser')
+    const finderNickname =
+      this.extractXmlValue(normalized, 'findernickname') ||
+      this.extractXmlValue(normalized, 'finder_nickname')
+    const finderCoverUrl =
+      this.extractXmlValue(normalized, 'thumbUrl') ||
+      this.extractXmlValue(normalized, 'coverUrl') ||
+      this.extractXmlValue(normalized, 'thumburl') ||
+      this.extractXmlValue(normalized, 'coverurl')
+    const finderAvatar = this.extractXmlValue(normalized, 'avatar')
+    const durationRaw = this.extractXmlValue(normalized, 'videoPlayDuration') || this.extractXmlValue(normalized, 'duration')
+    const finderDuration = durationRaw ? this.parseDurationSeconds(durationRaw) : null
+    const finderObjectId =
+      this.extractXmlValue(normalized, 'finderobjectid') ||
+      this.extractXmlValue(normalized, 'finder_objectid') ||
+      this.extractXmlValue(normalized, 'objectid') ||
+      this.extractXmlValue(normalized, 'object_id')
+    const finderUrl =
+      this.extractXmlValue(normalized, 'url') ||
+      this.extractXmlValue(normalized, 'shareurl')
+
+    if (finderTitle) meta.finderTitle = finderTitle
+    if (finderDesc) meta.finderDesc = finderDesc
+    if (finderUsername) meta.finderUsername = finderUsername
+    if (finderNickname) meta.finderNickname = finderNickname
+    if (finderCoverUrl) meta.finderCoverUrl = finderCoverUrl
+    if (finderAvatar) meta.finderAvatar = finderAvatar
+    if (finderDuration != null) meta.finderDuration = finderDuration
+    if (finderObjectId) meta.finderObjectId = finderObjectId
+    if (finderUrl) meta.finderUrl = finderUrl
+
+    return Object.keys(meta).length > 0 ? meta : null
   }
 
   private getInlineEmojiDataUrl(name: string): string | null {
@@ -3527,6 +3623,13 @@ class ExportService {
           senderAvatarKey: msg.senderUsername
         }
 
+        if (options.format === 'arkme-json') {
+          const appMsgMeta = this.extractArkmeAppMessageMeta(msg.content, msg.localType)
+          if (appMsgMeta) {
+            Object.assign(msgObj, appMsgMeta)
+          }
+        }
+
         if (content && this.isTransferExportContent(content) && msg.content) {
           transferCandidates.push({ xml: msg.content, messageRef: msgObj })
         }
@@ -3705,6 +3808,17 @@ class ExportService {
           if (message.locationLng != null) compactMessage.locationLng = message.locationLng
           if (message.locationPoiname) compactMessage.locationPoiname = message.locationPoiname
           if (message.locationLabel) compactMessage.locationLabel = message.locationLabel
+          if (message.appMsgType) compactMessage.appMsgType = message.appMsgType
+          if (message.appMsgKind) compactMessage.appMsgKind = message.appMsgKind
+          if (message.finderTitle) compactMessage.finderTitle = message.finderTitle
+          if (message.finderDesc) compactMessage.finderDesc = message.finderDesc
+          if (message.finderUsername) compactMessage.finderUsername = message.finderUsername
+          if (message.finderNickname) compactMessage.finderNickname = message.finderNickname
+          if (message.finderCoverUrl) compactMessage.finderCoverUrl = message.finderCoverUrl
+          if (message.finderAvatar) compactMessage.finderAvatar = message.finderAvatar
+          if (message.finderDuration != null) compactMessage.finderDuration = message.finderDuration
+          if (message.finderObjectId) compactMessage.finderObjectId = message.finderObjectId
+          if (message.finderUrl) compactMessage.finderUrl = message.finderUrl
           return compactMessage
         })
 
@@ -5699,18 +5813,27 @@ class ExportService {
         }
         return Math.min(sessionIds.length, completedCount + activeRatioSum)
       }
-      const defaultConcurrency = exportMediaEnabled ? 2 : 4
+      const isTextContentBatchExport = effectiveOptions.contentType === 'text' && !exportMediaEnabled
+      const defaultConcurrency = exportMediaEnabled ? 2 : (isTextContentBatchExport ? 1 : 4)
       const rawConcurrency = typeof effectiveOptions.exportConcurrency === 'number'
         ? Math.floor(effectiveOptions.exportConcurrency)
         : defaultConcurrency
-      const clampedConcurrency = Math.max(1, Math.min(rawConcurrency, 6))
+      const maxSessionConcurrency = isTextContentBatchExport ? 1 : 6
+      const clampedConcurrency = Math.max(1, Math.min(rawConcurrency, maxSessionConcurrency))
       const sessionConcurrency = clampedConcurrency
       const queue = [...sessionIds]
       let pauseRequested = false
       let stopRequested = false
       const emptySessionIds = new Set<string>()
-      const canFastSkipEmptySessions = this.isUnboundedDateRange(effectiveOptions.dateRange) &&
+      const sessionMessageCountHints = new Map<string, number>()
+      const sessionLatestTimestampHints = new Map<string, number>()
+      const canUseSessionSnapshotHints = isTextContentBatchExport &&
+        this.isUnboundedDateRange(effectiveOptions.dateRange) &&
         !String(effectiveOptions.senderUsername || '').trim()
+      const canFastSkipEmptySessions = !isTextContentBatchExport &&
+        this.isUnboundedDateRange(effectiveOptions.dateRange) &&
+        !String(effectiveOptions.senderUsername || '').trim()
+      const canTrySkipUnchangedTextSessions = canUseSessionSnapshotHints
       if (canFastSkipEmptySessions && sessionIds.length > 0) {
         const EMPTY_SESSION_PRECHECK_LIMIT = 1200
         if (sessionIds.length <= EMPTY_SESSION_PRECHECK_LIMIT) {
@@ -5742,6 +5865,9 @@ class ExportService {
             if (countsResult.success && countsResult.counts) {
               for (const batchSessionId of batchSessionIds) {
                 const count = countsResult.counts[batchSessionId]
+                if (typeof count === 'number' && Number.isFinite(count) && count >= 0) {
+                  sessionMessageCountHints.set(batchSessionId, Math.max(0, Math.floor(count)))
+                }
                 if (typeof count === 'number' && Number.isFinite(count) && count <= 0) {
                   emptySessionIds.add(batchSessionId)
                 }
@@ -5772,6 +5898,26 @@ class ExportService {
         }
       }
 
+      if (canUseSessionSnapshotHints && sessionIds.length > 0) {
+        const sessionSet = new Set(sessionIds)
+        const sessionsResult = await chatService.getSessions()
+        if (sessionsResult.success && Array.isArray(sessionsResult.sessions)) {
+          for (const item of sessionsResult.sessions) {
+            const username = String(item?.username || '').trim()
+            if (!username) continue
+            if (!sessionSet.has(username)) continue
+            const messageCountHint = Number(item?.messageCountHint)
+            if (Number.isFinite(messageCountHint) && messageCountHint >= 0) {
+              sessionMessageCountHints.set(username, Math.floor(messageCountHint))
+            }
+            const lastTimestamp = Number(item?.lastTimestamp)
+            if (Number.isFinite(lastTimestamp) && lastTimestamp > 0) {
+              sessionLatestTimestampHints.set(username, Math.floor(lastTimestamp))
+            }
+          }
+        }
+      }
+
       if (stopRequested) {
         return {
           success: true,
@@ -5799,6 +5945,28 @@ class ExportService {
         try {
           this.throwIfStopRequested(control)
           const sessionInfo = await this.getContactInfo(sessionId)
+          const messageCountHint = sessionMessageCountHints.get(sessionId)
+          const latestTimestampHint = sessionLatestTimestampHints.get(sessionId)
+
+          if (
+            isTextContentBatchExport &&
+            typeof messageCountHint === 'number' &&
+            messageCountHint <= 0
+          ) {
+            successCount++
+            successSessionIds.push(sessionId)
+            activeSessionRatios.delete(sessionId)
+            completedCount++
+            onProgress?.({
+              current: computeAggregateCurrent(),
+              total: sessionIds.length,
+              currentSession: sessionInfo.displayName,
+              currentSessionId: sessionId,
+              phase: 'exporting',
+              phaseLabel: '该会话没有消息，已跳过'
+            })
+            return 'done'
+          }
 
           if (emptySessionIds.has(sessionId)) {
             failCount++
@@ -5859,6 +6027,35 @@ class ExportService {
           else if (effectiveOptions.format === 'weclone') ext = '.csv'
           else if (effectiveOptions.format === 'html') ext = '.html'
           const outputPath = path.join(sessionDir, `${fileNameWithPrefix}${ext}`)
+          const canTrySkipUnchanged = canTrySkipUnchangedTextSessions &&
+            typeof messageCountHint === 'number' &&
+            messageCountHint >= 0 &&
+            typeof latestTimestampHint === 'number' &&
+            latestTimestampHint > 0 &&
+            fs.existsSync(outputPath)
+          if (canTrySkipUnchanged) {
+            const latestRecord = exportRecordService.getLatestRecord(sessionId, effectiveOptions.format)
+            const hasNoDataChange = Boolean(
+              latestRecord &&
+              latestRecord.messageCount === messageCountHint &&
+              Number(latestRecord.sourceLatestMessageTimestamp || 0) >= latestTimestampHint
+            )
+            if (hasNoDataChange) {
+              successCount++
+              successSessionIds.push(sessionId)
+              activeSessionRatios.delete(sessionId)
+              completedCount++
+              onProgress?.({
+                current: computeAggregateCurrent(),
+                total: sessionIds.length,
+                currentSession: sessionInfo.displayName,
+                currentSessionId: sessionId,
+                phase: 'exporting',
+                phaseLabel: '无变化，已跳过'
+              })
+              return 'done'
+            }
+          }
 
           let result: { success: boolean; error?: string }
           if (effectiveOptions.format === 'json' || effectiveOptions.format === 'arkme-json') {
@@ -5885,6 +6082,14 @@ class ExportService {
           if (result.success) {
             successCount++
             successSessionIds.push(sessionId)
+            if (typeof messageCountHint === 'number' && messageCountHint >= 0) {
+              exportRecordService.saveRecord(sessionId, effectiveOptions.format, messageCountHint, {
+                sourceLatestMessageTimestamp: typeof latestTimestampHint === 'number' && latestTimestampHint > 0
+                  ? latestTimestampHint
+                  : undefined,
+                outputPath
+              })
+            }
           } else {
             failCount++
             failedSessionIds.push(sessionId)
@@ -5910,7 +6115,8 @@ class ExportService {
         }
       }
 
-      const workers = Array.from({ length: Math.min(sessionConcurrency, queue.length) }, async () => {
+      if (isTextContentBatchExport) {
+        // 文本内容批量导出使用串行调度，降低数据库与文件系统抢占，行为更贴近 wxdaochu。
         while (queue.length > 0) {
           if (control?.shouldStop?.()) {
             stopRequested = true
@@ -5924,14 +6130,37 @@ class ExportService {
           const sessionId = queue.shift()
           if (!sessionId) break
           const runState = await runOne(sessionId)
+          await new Promise(resolve => setImmediate(resolve))
           if (runState === 'stopped') {
             stopRequested = true
             queue.unshift(sessionId)
             break
           }
         }
-      })
-      await Promise.all(workers)
+      } else {
+        const workers = Array.from({ length: Math.min(sessionConcurrency, queue.length) }, async () => {
+          while (queue.length > 0) {
+            if (control?.shouldStop?.()) {
+              stopRequested = true
+              break
+            }
+            if (control?.shouldPause?.()) {
+              pauseRequested = true
+              break
+            }
+
+            const sessionId = queue.shift()
+            if (!sessionId) break
+            const runState = await runOne(sessionId)
+            if (runState === 'stopped') {
+              stopRequested = true
+              queue.unshift(sessionId)
+              break
+            }
+          }
+        })
+        await Promise.all(workers)
+      }
 
       const pendingSessionIds = [...queue]
       if (stopRequested && pendingSessionIds.length > 0) {

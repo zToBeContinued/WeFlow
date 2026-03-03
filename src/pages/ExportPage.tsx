@@ -902,7 +902,7 @@ function ExportPage() {
   const [writeLayout, setWriteLayout] = useState<configService.ExportWriteLayout>('A')
 
   const [options, setOptions] = useState<ExportOptions>({
-    format: 'excel',
+    format: 'arkme-json',
     dateRange: {
       start: new Date(new Date().setHours(0, 0, 0, 0)),
       end: new Date()
@@ -918,7 +918,7 @@ function ExportPage() {
     excelCompactColumns: true,
     txtColumns: defaultTxtColumns,
     displayNamePreference: 'remark',
-    exportConcurrency: 4
+    exportConcurrency: 2
   })
 
   const [exportDialog, setExportDialog] = useState<ExportDialogState>({
@@ -2178,9 +2178,13 @@ function ExportPage() {
 
     if (scope === 'content' && contentType) {
       if (contentType === 'text') {
+        const fastTextFormat: TextExportFormat = options.format === 'excel' ? 'arkme-json' : options.format
+        const textExportConcurrency = Math.min(2, Math.max(1, base.exportConcurrency ?? options.exportConcurrency))
         return {
           ...base,
+          format: fastTextFormat,
           contentType,
+          exportConcurrency: textExportConcurrency,
           exportAvatars: true,
           exportMedia: false,
           exportImages: false,
