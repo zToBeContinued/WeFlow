@@ -146,6 +146,9 @@ interface ExportSessionStats {
   imageMessages: number
   videoMessages: number
   emojiMessages: number
+  transferMessages: number
+  redPacketMessages: number
+  callMessages: number
   firstTimestamp?: number
   lastTimestamp?: number
   privateMutualGroups?: number
@@ -2102,7 +2105,10 @@ class ChatService {
       voiceMessages: Number.isFinite(stats.voiceMessages) ? Math.max(0, Math.floor(stats.voiceMessages)) : 0,
       imageMessages: Number.isFinite(stats.imageMessages) ? Math.max(0, Math.floor(stats.imageMessages)) : 0,
       videoMessages: Number.isFinite(stats.videoMessages) ? Math.max(0, Math.floor(stats.videoMessages)) : 0,
-      emojiMessages: Number.isFinite(stats.emojiMessages) ? Math.max(0, Math.floor(stats.emojiMessages)) : 0
+      emojiMessages: Number.isFinite(stats.emojiMessages) ? Math.max(0, Math.floor(stats.emojiMessages)) : 0,
+      transferMessages: Number.isFinite(stats.transferMessages) ? Math.max(0, Math.floor(stats.transferMessages)) : 0,
+      redPacketMessages: Number.isFinite(stats.redPacketMessages) ? Math.max(0, Math.floor(stats.redPacketMessages)) : 0,
+      callMessages: Number.isFinite(stats.callMessages) ? Math.max(0, Math.floor(stats.callMessages)) : 0
     }
 
     if (Number.isFinite(stats.firstTimestamp)) normalized.firstTimestamp = Math.max(0, Math.floor(stats.firstTimestamp as number))
@@ -2123,6 +2129,9 @@ class ChatService {
       imageMessages: stats.imageMessages,
       videoMessages: stats.videoMessages,
       emojiMessages: stats.emojiMessages,
+      transferMessages: stats.transferMessages,
+      redPacketMessages: stats.redPacketMessages,
+      callMessages: stats.callMessages,
       firstTimestamp: stats.firstTimestamp,
       lastTimestamp: stats.lastTimestamp,
       privateMutualGroups: stats.privateMutualGroups,
@@ -2341,6 +2350,26 @@ class ChatService {
     return String(value || '').replace(/'/g, "''")
   }
 
+  private extractType49XmlTypeForStats(content: string): string {
+    if (!content) return ''
+
+    const appmsgMatch = /<appmsg[\s\S]*?>([\s\S]*?)<\/appmsg>/i.exec(content)
+    if (appmsgMatch) {
+      const appmsgInner = appmsgMatch[1]
+        .replace(/<refermsg[\s\S]*?<\/refermsg>/gi, '')
+        .replace(/<patMsg[\s\S]*?<\/patMsg>/gi, '')
+      const typeMatch = /<type>([\s\S]*?)<\/type>/i.exec(appmsgInner)
+      if (typeMatch) return String(typeMatch[1] || '').trim()
+    }
+
+    return this.extractXmlValue(content, 'type')
+  }
+
+  private buildXmlTypeLikeExpr(columnName: string, xmlType: '2000' | '2001'): string {
+    const colExpr = `LOWER(CAST(COALESCE(${this.quoteSqlIdentifier(columnName)}, '') AS TEXT))`
+    return `${colExpr} LIKE '%<type>${xmlType}</type>%'`
+  }
+
   private async collectSessionExportStatsByCursorScan(
     sessionId: string,
     selfIdentitySet: Set<string>
@@ -2350,7 +2379,10 @@ class ChatService {
       voiceMessages: 0,
       imageMessages: 0,
       videoMessages: 0,
-      emojiMessages: 0
+      emojiMessages: 0,
+      transferMessages: 0,
+      redPacketMessages: 0,
+      callMessages: 0
     }
     if (sessionId.endsWith('@chatroom')) {
       stats.groupMyMessages = 0
@@ -2380,6 +2412,17 @@ class ChatService {
           if (localType === 3) stats.imageMessages += 1
           if (localType === 43) stats.videoMessages += 1
           if (localType === 47) stats.emojiMessages += 1
+          if (localType === 50) stats.callMessages += 1
+          if (localType === 8589934592049) stats.transferMessages += 1
+          if (localType === 8594229559345) stats.redPacketMessages += 1
+          if (localType === 49) {
+            const rawMessageContent = this.getRowField(row, ['message_content', 'messageContent', 'msg_content', 'msgContent', 'content', 'WCDB_CT_message_content'])
+            const rawCompressContent = this.getRowField(row, ['compress_content', 'compressContent', 'compressed_content', 'compressedContent', 'WCDB_CT_compress_content'])
+            const content = this.decodeMessageContent(rawMessageContent, rawCompressContent)
+            const xmlType = this.extractType49XmlTypeForStats(content)
+            if (xmlType === '2000') stats.transferMessages += 1
+            if (xmlType === '2001') stats.redPacketMessages += 1
+          }
 
           const createTime = this.getRowInt(
             row,
@@ -2438,7 +2481,10 @@ class ChatService {
       voiceMessages: 0,
       imageMessages: 0,
       videoMessages: 0,
-      emojiMessages: 0
+      emojiMessages: 0,
+      transferMessages: 0,
+      redPacketMessages: 0,
+      callMessages: 0
     }
     if (sessionId.endsWith('@chatroom')) {
       stats.groupMyMessages = 0
@@ -2465,6 +2511,18 @@ class ChatService {
       const timeCol = this.pickFirstColumn(columnSet, ['create_time', 'createtime', 'msg_create_time', 'time'])
       const senderCol = this.pickFirstColumn(columnSet, ['sender_username', 'senderusername', 'sender'])
       const isSendCol = this.pickFirstColumn(columnSet, ['computed_is_send', 'computedissend', 'is_send', 'issend'])
+      const messageContentCol = this.pickFirstColumn(columnSet, ['message_content', 'messagecontent', 'msg_content', 'msgcontent', 'content'])
+      const compressContentCol = this.pickFirstColumn(columnSet, ['compress_content', 'compresscontent', 'compressed_content', 'compressedcontent'])
+
+      const transferXmlConditions: string[] = []
+      if (messageContentCol) transferXmlConditions.push(this.buildXmlTypeLikeExpr(messageContentCol, '2000'))
+      if (compressContentCol) transferXmlConditions.push(this.buildXmlTypeLikeExpr(compressContentCol, '2000'))
+      const transferXmlCond = transferXmlConditions.length > 0 ? `(${transferXmlConditions.join(' OR ')})` : '0'
+
+      const redPacketXmlConditions: string[] = []
+      if (messageContentCol) redPacketXmlConditions.push(this.buildXmlTypeLikeExpr(messageContentCol, '2001'))
+      if (compressContentCol) redPacketXmlConditions.push(this.buildXmlTypeLikeExpr(compressContentCol, '2001'))
+      const redPacketXmlCond = redPacketXmlConditions.length > 0 ? `(${redPacketXmlConditions.join(' OR ')})` : '0'
 
       const selectParts: string[] = [
         'COUNT(*) AS total_messages',
@@ -2472,6 +2530,9 @@ class ChatService {
         typeCol ? `SUM(CASE WHEN ${this.quoteSqlIdentifier(typeCol)} = 3 THEN 1 ELSE 0 END) AS image_messages` : '0 AS image_messages',
         typeCol ? `SUM(CASE WHEN ${this.quoteSqlIdentifier(typeCol)} = 43 THEN 1 ELSE 0 END) AS video_messages` : '0 AS video_messages',
         typeCol ? `SUM(CASE WHEN ${this.quoteSqlIdentifier(typeCol)} = 47 THEN 1 ELSE 0 END) AS emoji_messages` : '0 AS emoji_messages',
+        typeCol ? `SUM(CASE WHEN ${this.quoteSqlIdentifier(typeCol)} = 50 THEN 1 ELSE 0 END) AS call_messages` : '0 AS call_messages',
+        typeCol ? `SUM(CASE WHEN ${this.quoteSqlIdentifier(typeCol)} = 8589934592049 THEN 1 WHEN ${this.quoteSqlIdentifier(typeCol)} = 49 AND ${transferXmlCond} THEN 1 ELSE 0 END) AS transfer_messages` : '0 AS transfer_messages',
+        typeCol ? `SUM(CASE WHEN ${this.quoteSqlIdentifier(typeCol)} = 8594229559345 THEN 1 WHEN ${this.quoteSqlIdentifier(typeCol)} = 49 AND ${redPacketXmlCond} THEN 1 ELSE 0 END) AS red_packet_messages` : '0 AS red_packet_messages',
         timeCol ? `MIN(${this.quoteSqlIdentifier(timeCol)}) AS first_timestamp` : 'NULL AS first_timestamp',
         timeCol ? `MAX(${this.quoteSqlIdentifier(timeCol)}) AS last_timestamp` : 'NULL AS last_timestamp'
       ]
@@ -2509,6 +2570,9 @@ class ChatService {
         stats.imageMessages += this.getRowInt(aggregateRow, ['image_messages', 'imageMessages'], 0)
         stats.videoMessages += this.getRowInt(aggregateRow, ['video_messages', 'videoMessages'], 0)
         stats.emojiMessages += this.getRowInt(aggregateRow, ['emoji_messages', 'emojiMessages'], 0)
+        stats.callMessages += this.getRowInt(aggregateRow, ['call_messages', 'callMessages'], 0)
+        stats.transferMessages += this.getRowInt(aggregateRow, ['transfer_messages', 'transferMessages'], 0)
+        stats.redPacketMessages += this.getRowInt(aggregateRow, ['red_packet_messages', 'redPacketMessages'], 0)
 
         const firstTs = this.getRowInt(aggregateRow, ['first_timestamp', 'firstTimestamp'], 0)
         if (firstTs > 0 && (stats.firstTimestamp === undefined || firstTs < stats.firstTimestamp)) {
@@ -2545,6 +2609,9 @@ class ChatService {
         stats.imageMessages += this.getRowInt(aggregateRow, ['image_messages', 'imageMessages'], 0)
         stats.videoMessages += this.getRowInt(aggregateRow, ['video_messages', 'videoMessages'], 0)
         stats.emojiMessages += this.getRowInt(aggregateRow, ['emoji_messages', 'emojiMessages'], 0)
+        stats.callMessages += this.getRowInt(aggregateRow, ['call_messages', 'callMessages'], 0)
+        stats.transferMessages += this.getRowInt(aggregateRow, ['transfer_messages', 'transferMessages'], 0)
+        stats.redPacketMessages += this.getRowInt(aggregateRow, ['red_packet_messages', 'redPacketMessages'], 0)
 
         const firstTs = this.getRowInt(aggregateRow, ['first_timestamp', 'firstTimestamp'], 0)
         if (firstTs > 0 && (stats.firstTimestamp === undefined || firstTs < stats.firstTimestamp)) {
@@ -2640,7 +2707,10 @@ class ChatService {
       voiceMessages: 0,
       imageMessages: 0,
       videoMessages: 0,
-      emojiMessages: 0
+      emojiMessages: 0,
+      transferMessages: 0,
+      redPacketMessages: 0,
+      callMessages: 0
     }
     if (isGroup) {
       stats.groupMyMessages = 0

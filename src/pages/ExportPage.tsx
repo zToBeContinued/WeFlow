@@ -506,6 +506,9 @@ interface SessionDetail {
   imageMessages?: number
   videoMessages?: number
   emojiMessages?: number
+  transferMessages?: number
+  redPacketMessages?: number
+  callMessages?: number
   privateMutualGroups?: number
   groupMemberCount?: number
   groupMyMessages?: number
@@ -525,6 +528,9 @@ interface SessionExportMetric {
   imageMessages: number
   videoMessages: number
   emojiMessages: number
+  transferMessages: number
+  redPacketMessages: number
+  callMessages: number
   firstTimestamp?: number
   lastTimestamp?: number
   privateMutualGroups?: number
@@ -540,6 +546,9 @@ interface SessionContentMetric {
   imageMessages?: number
   videoMessages?: number
   emojiMessages?: number
+  transferMessages?: number
+  redPacketMessages?: number
+  callMessages?: number
 }
 
 interface SessionContentStatsProgress {
@@ -1458,13 +1467,19 @@ function ExportPage() {
       const imageMessages = normalizeMessageCount(metricRaw.imageMessages)
       const videoMessages = normalizeMessageCount(metricRaw.videoMessages)
       const emojiMessages = normalizeMessageCount(metricRaw.emojiMessages)
+      const transferMessages = normalizeMessageCount(metricRaw.transferMessages)
+      const redPacketMessages = normalizeMessageCount(metricRaw.redPacketMessages)
+      const callMessages = normalizeMessageCount(metricRaw.callMessages)
 
       if (
         typeof totalMessages !== 'number' &&
         typeof voiceMessages !== 'number' &&
         typeof imageMessages !== 'number' &&
         typeof videoMessages !== 'number' &&
-        typeof emojiMessages !== 'number'
+        typeof emojiMessages !== 'number' &&
+        typeof transferMessages !== 'number' &&
+        typeof redPacketMessages !== 'number' &&
+        typeof callMessages !== 'number'
       ) {
         continue
       }
@@ -1474,7 +1489,10 @@ function ExportPage() {
         voiceMessages,
         imageMessages,
         videoMessages,
-        emojiMessages
+        emojiMessages,
+        transferMessages,
+        redPacketMessages,
+        callMessages
       }
       if (typeof totalMessages === 'number') {
         nextMessageCounts[sessionId] = totalMessages
@@ -1505,14 +1523,20 @@ function ExportPage() {
             voiceMessages: typeof metric.voiceMessages === 'number' ? metric.voiceMessages : previous.voiceMessages,
             imageMessages: typeof metric.imageMessages === 'number' ? metric.imageMessages : previous.imageMessages,
             videoMessages: typeof metric.videoMessages === 'number' ? metric.videoMessages : previous.videoMessages,
-            emojiMessages: typeof metric.emojiMessages === 'number' ? metric.emojiMessages : previous.emojiMessages
+            emojiMessages: typeof metric.emojiMessages === 'number' ? metric.emojiMessages : previous.emojiMessages,
+            transferMessages: typeof metric.transferMessages === 'number' ? metric.transferMessages : previous.transferMessages,
+            redPacketMessages: typeof metric.redPacketMessages === 'number' ? metric.redPacketMessages : previous.redPacketMessages,
+            callMessages: typeof metric.callMessages === 'number' ? metric.callMessages : previous.callMessages
           }
           if (
             previous.totalMessages === nextMetric.totalMessages &&
             previous.voiceMessages === nextMetric.voiceMessages &&
             previous.imageMessages === nextMetric.imageMessages &&
             previous.videoMessages === nextMetric.videoMessages &&
-            previous.emojiMessages === nextMetric.emojiMessages
+            previous.emojiMessages === nextMetric.emojiMessages &&
+            previous.transferMessages === nextMetric.transferMessages &&
+            previous.redPacketMessages === nextMetric.redPacketMessages &&
+            previous.callMessages === nextMetric.callMessages
           ) {
             continue
           }
@@ -3150,6 +3174,9 @@ function ExportPage() {
         imageMessages: Number.isFinite(metric.imageMessages) ? metric.imageMessages : prev.imageMessages,
         videoMessages: Number.isFinite(metric.videoMessages) ? metric.videoMessages : prev.videoMessages,
         emojiMessages: Number.isFinite(metric.emojiMessages) ? metric.emojiMessages : prev.emojiMessages,
+        transferMessages: Number.isFinite(metric.transferMessages) ? metric.transferMessages : prev.transferMessages,
+        redPacketMessages: Number.isFinite(metric.redPacketMessages) ? metric.redPacketMessages : prev.redPacketMessages,
+        callMessages: Number.isFinite(metric.callMessages) ? metric.callMessages : prev.callMessages,
         groupMemberCount: Number.isFinite(metric.groupMemberCount) ? metric.groupMemberCount : prev.groupMemberCount,
         groupMyMessages: Number.isFinite(metric.groupMyMessages) ? metric.groupMyMessages : prev.groupMyMessages,
         groupActiveSpeakers: Number.isFinite(metric.groupActiveSpeakers) ? metric.groupActiveSpeakers : prev.groupActiveSpeakers,
@@ -3182,6 +3209,9 @@ function ExportPage() {
     const metricImage = normalizeMessageCount(cachedMetric?.imageMessages)
     const metricVideo = normalizeMessageCount(cachedMetric?.videoMessages)
     const metricEmoji = normalizeMessageCount(cachedMetric?.emojiMessages)
+    const metricTransfer = normalizeMessageCount(cachedMetric?.transferMessages)
+    const metricRedPacket = normalizeMessageCount(cachedMetric?.redPacketMessages)
+    const metricCall = normalizeMessageCount(cachedMetric?.callMessages)
     const hintedCount = typeof mappedSession?.messageCountHint === 'number' && Number.isFinite(mappedSession.messageCountHint) && mappedSession.messageCountHint >= 0
       ? Math.floor(mappedSession.messageCountHint)
       : undefined
@@ -3204,6 +3234,9 @@ function ExportPage() {
         imageMessages: metricImage ?? (sameSession ? prev?.imageMessages : undefined),
         videoMessages: metricVideo ?? (sameSession ? prev?.videoMessages : undefined),
         emojiMessages: metricEmoji ?? (sameSession ? prev?.emojiMessages : undefined),
+        transferMessages: metricTransfer ?? (sameSession ? prev?.transferMessages : undefined),
+        redPacketMessages: metricRedPacket ?? (sameSession ? prev?.redPacketMessages : undefined),
+        callMessages: metricCall ?? (sameSession ? prev?.callMessages : undefined),
         privateMutualGroups: sameSession ? prev?.privateMutualGroups : undefined,
         groupMemberCount: sameSession ? prev?.groupMemberCount : undefined,
         groupMyMessages: sameSession ? prev?.groupMyMessages : undefined,
@@ -3236,6 +3269,9 @@ function ExportPage() {
           imageMessages: prev?.imageMessages,
           videoMessages: prev?.videoMessages,
           emojiMessages: prev?.emojiMessages,
+          transferMessages: prev?.transferMessages,
+          redPacketMessages: prev?.redPacketMessages,
+          callMessages: prev?.callMessages,
           privateMutualGroups: prev?.privateMutualGroups,
           groupMemberCount: prev?.groupMemberCount,
           groupMyMessages: prev?.groupMyMessages,
@@ -4543,6 +4579,30 @@ function ExportPage() {
                       <span className="value">
                         {Number.isFinite(sessionDetail.emojiMessages)
                           ? (sessionDetail.emojiMessages as number).toLocaleString()
+                          : (isLoadingSessionDetailExtra ? '统计中...' : '—')}
+                      </span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">转账消息数</span>
+                      <span className="value">
+                        {Number.isFinite(sessionDetail.transferMessages)
+                          ? (sessionDetail.transferMessages as number).toLocaleString()
+                          : (isLoadingSessionDetailExtra ? '统计中...' : '—')}
+                      </span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">红包消息数</span>
+                      <span className="value">
+                        {Number.isFinite(sessionDetail.redPacketMessages)
+                          ? (sessionDetail.redPacketMessages as number).toLocaleString()
+                          : (isLoadingSessionDetailExtra ? '统计中...' : '—')}
+                      </span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">通话消息数</span>
+                      <span className="value">
+                        {Number.isFinite(sessionDetail.callMessages)
+                          ? (sessionDetail.callMessages as number).toLocaleString()
                           : (isLoadingSessionDetailExtra ? '统计中...' : '—')}
                       </span>
                     </div>

@@ -215,6 +215,9 @@ interface SessionDetail {
   imageMessages?: number
   videoMessages?: number
   emojiMessages?: number
+  transferMessages?: number
+  redPacketMessages?: number
+  callMessages?: number
   privateMutualGroups?: number
   groupMemberCount?: number
   groupMyMessages?: number
@@ -234,6 +237,9 @@ interface SessionExportMetric {
   imageMessages: number
   videoMessages: number
   emojiMessages: number
+  transferMessages: number
+  redPacketMessages: number
+  callMessages: number
   firstTimestamp?: number
   lastTimestamp?: number
   privateMutualGroups?: number
@@ -787,6 +793,9 @@ function ChatPage(_props: ChatPageProps) {
         imageMessages: Number.isFinite(metric.imageMessages) ? metric.imageMessages : prev.imageMessages,
         videoMessages: Number.isFinite(metric.videoMessages) ? metric.videoMessages : prev.videoMessages,
         emojiMessages: Number.isFinite(metric.emojiMessages) ? metric.emojiMessages : prev.emojiMessages,
+        transferMessages: Number.isFinite(metric.transferMessages) ? metric.transferMessages : prev.transferMessages,
+        redPacketMessages: Number.isFinite(metric.redPacketMessages) ? metric.redPacketMessages : prev.redPacketMessages,
+        callMessages: Number.isFinite(metric.callMessages) ? metric.callMessages : prev.callMessages,
         groupMemberCount: Number.isFinite(metric.groupMemberCount) ? metric.groupMemberCount : prev.groupMemberCount,
         groupMyMessages: Number.isFinite(metric.groupMyMessages) ? metric.groupMyMessages : prev.groupMyMessages,
         groupActiveSpeakers: Number.isFinite(metric.groupActiveSpeakers) ? metric.groupActiveSpeakers : prev.groupActiveSpeakers,
@@ -832,6 +841,9 @@ function ChatPage(_props: ChatPageProps) {
         imageMessages: sameSession ? prev?.imageMessages : undefined,
         videoMessages: sameSession ? prev?.videoMessages : undefined,
         emojiMessages: sameSession ? prev?.emojiMessages : undefined,
+        transferMessages: sameSession ? prev?.transferMessages : undefined,
+        redPacketMessages: sameSession ? prev?.redPacketMessages : undefined,
+        callMessages: sameSession ? prev?.callMessages : undefined,
         privateMutualGroups: sameSession ? prev?.privateMutualGroups : undefined,
         groupMemberCount: sameSession ? prev?.groupMemberCount : undefined,
         groupMyMessages: sameSession ? prev?.groupMyMessages : undefined,
@@ -884,6 +896,9 @@ function ChatPage(_props: ChatPageProps) {
           imageMessages: prev?.imageMessages,
           videoMessages: prev?.videoMessages,
           emojiMessages: prev?.emojiMessages,
+          transferMessages: prev?.transferMessages,
+          redPacketMessages: prev?.redPacketMessages,
+          callMessages: prev?.callMessages,
           privateMutualGroups: prev?.privateMutualGroups,
           groupMemberCount: prev?.groupMemberCount,
           groupMyMessages: prev?.groupMyMessages,
@@ -3709,6 +3724,30 @@ function ChatPage(_props: ChatPageProps) {
                           <span className="value">
                             {Number.isFinite(sessionDetail.emojiMessages)
                               ? (sessionDetail.emojiMessages as number).toLocaleString()
+                              : (isLoadingDetailExtra ? '统计中...' : '—')}
+                          </span>
+                        </div>
+                        <div className="detail-item">
+                          <span className="label">转账消息数</span>
+                          <span className="value">
+                            {Number.isFinite(sessionDetail.transferMessages)
+                              ? (sessionDetail.transferMessages as number).toLocaleString()
+                              : (isLoadingDetailExtra ? '统计中...' : '—')}
+                          </span>
+                        </div>
+                        <div className="detail-item">
+                          <span className="label">红包消息数</span>
+                          <span className="value">
+                            {Number.isFinite(sessionDetail.redPacketMessages)
+                              ? (sessionDetail.redPacketMessages as number).toLocaleString()
+                              : (isLoadingDetailExtra ? '统计中...' : '—')}
+                          </span>
+                        </div>
+                        <div className="detail-item">
+                          <span className="label">通话消息数</span>
+                          <span className="value">
+                            {Number.isFinite(sessionDetail.callMessages)
+                              ? (sessionDetail.callMessages as number).toLocaleString()
                               : (isLoadingDetailExtra ? '统计中...' : '—')}
                           </span>
                         </div>

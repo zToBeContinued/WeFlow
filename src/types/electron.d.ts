@@ -251,6 +251,9 @@ export interface ElectronAPI {
         imageMessages: number
         videoMessages: number
         emojiMessages: number
+        transferMessages: number
+        redPacketMessages: number
+        callMessages: number
         firstTimestamp?: number
         lastTimestamp?: number
         privateMutualGroups?: number

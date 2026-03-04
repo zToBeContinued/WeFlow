@@ -12,6 +12,9 @@ export interface SessionStatsCacheStats {
   imageMessages: number
   videoMessages: number
   emojiMessages: number
+  transferMessages: number
+  redPacketMessages: number
+  callMessages: number
   firstTimestamp?: number
   lastTimestamp?: number
   privateMutualGroups?: number
@@ -50,6 +53,9 @@ function normalizeStats(raw: unknown): SessionStatsCacheStats | null {
   const imageMessages = toNonNegativeInt(source.imageMessages)
   const videoMessages = toNonNegativeInt(source.videoMessages)
   const emojiMessages = toNonNegativeInt(source.emojiMessages)
+  const transferMessages = toNonNegativeInt(source.transferMessages) ?? 0
+  const redPacketMessages = toNonNegativeInt(source.redPacketMessages) ?? 0
+  const callMessages = toNonNegativeInt(source.callMessages) ?? 0
 
   if (
     totalMessages === undefined ||
@@ -66,7 +72,10 @@ function normalizeStats(raw: unknown): SessionStatsCacheStats | null {
     voiceMessages,
     imageMessages,
     videoMessages,
-    emojiMessages
+    emojiMessages,
+    transferMessages,
+    redPacketMessages,
+    callMessages
   }
 
   const firstTimestamp = toNonNegativeInt(source.firstTimestamp)
