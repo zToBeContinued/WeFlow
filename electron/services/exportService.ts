@@ -6945,6 +6945,7 @@ class ExportService {
       if (collected.rows.length === 0) {
         return { success: false, error: '该会话在指定时间范围内没有消息' }
       }
+      const totalMessages = collected.rows.length
 
       const senderUsernames = new Set<string>()
       let senderScanIndex = 0
@@ -6987,6 +6988,7 @@ class ExportService {
         : []
 
       const mediaCache = new Map<string, MediaExportItem | null>()
+      const mediaDirCache = new Set<string>()
 
       if (mediaMessages.length > 0) {
         await this.preloadMediaLookupCaches(sessionId, mediaMessages, {
