@@ -102,7 +102,25 @@
       "target": [
         "nsis"
       ],
-      "icon": "public/icon.ico"
+      "icon": "public/icon.ico",
+      "extraFiles": [
+        {
+          "from": "resources/msvcp140.dll",
+          "to": "."
+        },
+        {
+          "from": "resources/msvcp140_1.dll",
+          "to": "."
+        },
+        {
+          "from": "resources/vcruntime140.dll",
+          "to": "."
+        },
+        {
+          "from": "resources/vcruntime140_1.dll",
+          "to": "."
+        }
+      ]
     },
     "linux": {
       "icon": "public/icon.png",
@@ -169,24 +187,6 @@
       "node_modules/sherpa-onnx-*/*",
       "node_modules/sherpa-onnx-*/**/*",
       "node_modules/ffmpeg-static/**/*"
-    ],
-    "extraFiles": [
-      {
-        "from": "resources/msvcp140.dll",
-        "to": "."
-      },
-      {
-        "from": "resources/msvcp140_1.dll",
-        "to": "."
-      },
-      {
-        "from": "resources/vcruntime140.dll",
-        "to": "."
-      },
-      {
-        "from": "resources/vcruntime140_1.dll",
-        "to": "."
-      }
     ],
     "icon": "resources/icon.icns"
   },

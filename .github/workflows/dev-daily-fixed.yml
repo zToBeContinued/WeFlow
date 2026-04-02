@@ -52,7 +52,7 @@ jobs:
           if gh release view "$FIXED_DEV_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$FIXED_DEV_TAG" --repo "$GITHUB_REPOSITORY" --title "Daily Dev Build" --prerelease
           else
-            gh release create "$FIXED_DEV_TAG" --repo "$GITHUB_REPOSITORY" --title "Daily Dev Build" --notes "固定开发版发布页（每日覆盖更新）" --prerelease
+            gh release create "$FIXED_DEV_TAG" --repo "$GITHUB_REPOSITORY" --title "Daily Dev Build" --notes "开发版发布页" --prerelease
           fi
 
   dev-mac-arm64:
@@ -91,7 +91,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          gh release upload "$FIXED_DEV_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          mapfile -t assets < <(find release -maxdepth 1 -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release files found in ./release"
+            exit 1
+          fi
+          gh release upload "$FIXED_DEV_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
 
   dev-linux:
     needs: prepare
@@ -129,7 +134,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          gh release upload "$FIXED_DEV_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          mapfile -t assets < <(find release -maxdepth 1 -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release files found in ./release"
+            exit 1
+          fi
+          gh release upload "$FIXED_DEV_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
 
   dev-win-x64:
     needs: prepare
@@ -167,7 +177,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          gh release upload "$FIXED_DEV_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          mapfile -t assets < <(find release -maxdepth 1 -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release files found in ./release"
+            exit 1
+          fi
+          gh release upload "$FIXED_DEV_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
 
   dev-win-arm64:
     needs: prepare
@@ -205,4 +220,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          gh release upload "$FIXED_DEV_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          mapfile -t assets < <(find release -maxdepth 1 -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release files found in ./release"
+            exit 1
+          fi
+          gh release upload "$FIXED_DEV_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
