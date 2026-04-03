@@ -56,6 +56,14 @@ export interface ElectronAPI {
   app: {
     getDownloadsPath: () => Promise<string>
     getVersion: () => Promise<string>
+    getLaunchAtStartupStatus: () => Promise<{ enabled: boolean; supported: boolean; reason?: string }>
+    setLaunchAtStartup: (enabled: boolean) => Promise<{
+      success: boolean
+      enabled: boolean
+      supported: boolean
+      reason?: string
+      error?: string
+    }>
     checkForUpdates: () => Promise<{ hasUpdate: boolean; version?: string; releaseNotes?: string }>
     downloadAndInstall: () => Promise<void>
     ignoreUpdate: (version: string) => Promise<{ success: boolean }>

@@ -27,6 +27,7 @@ interface ConfigSchema {
   themeId: string
   language: string
   logEnabled: boolean
+  launchAtStartup?: boolean
   llmModelPath: string
   whisperModelName: string
   whisperModelDir: string

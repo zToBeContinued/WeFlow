@@ -13,6 +13,7 @@ export const CONFIG_KEYS = {
   LAST_SESSION: 'lastSession',
   WINDOW_BOUNDS: 'windowBounds',
   CACHE_PATH: 'cachePath',
+  LAUNCH_AT_STARTUP: 'launchAtStartup',
 
   EXPORT_PATH: 'exportPath',
   AGREEMENT_ACCEPTED: 'agreementAccepted',
@@ -256,6 +257,18 @@ export async function getLogEnabled(): Promise<boolean> {
 // 设置日志开关
 export async function setLogEnabled(enabled: boolean): Promise<void> {
   await config.set(CONFIG_KEYS.LOG_ENABLED, enabled)
+}
+
+// 获取开机自启动偏好
+export async function getLaunchAtStartup(): Promise<boolean | null> {
+  const value = await config.get(CONFIG_KEYS.LAUNCH_AT_STARTUP)
+  if (typeof value === 'boolean') return value
+  return null
+}
+
+// 设置开机自启动偏好
+export async function setLaunchAtStartup(enabled: boolean): Promise<void> {
+  await config.set(CONFIG_KEYS.LAUNCH_AT_STARTUP, enabled)
 }
 
 // 获取 LLM 模型路径

@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   app: {
     getDownloadsPath: () => ipcRenderer.invoke('app:getDownloadsPath'),
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
+    getLaunchAtStartupStatus: () => ipcRenderer.invoke('app:getLaunchAtStartupStatus'),
+    setLaunchAtStartup: (enabled: boolean) => ipcRenderer.invoke('app:setLaunchAtStartup', enabled),
     checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
     downloadAndInstall: () => ipcRenderer.invoke('app:downloadAndInstall'),
     ignoreUpdate: (version: string) => ipcRenderer.invoke('app:ignoreUpdate', version),

@@ -138,6 +138,9 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
   const [notificationPosition, setNotificationPosition] = useState<'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'top-center'>('top-right')
   const [notificationFilterMode, setNotificationFilterMode] = useState<'all' | 'whitelist' | 'blacklist'>('all')
   const [notificationFilterList, setNotificationFilterList] = useState<string[]>([])
+  const [launchAtStartup, setLaunchAtStartup] = useState(false)
+  const [launchAtStartupSupported, setLaunchAtStartupSupported] = useState(isWindows || isMac)
+  const [launchAtStartupReason, setLaunchAtStartupReason] = useState('')
   const [windowCloseBehavior, setWindowCloseBehavior] = useState<configService.WindowCloseBehavior>('ask')
   const [quoteLayout, setQuoteLayout] = useState<configService.QuoteLayout>('quote-top')
   const [updateChannel, setUpdateChannel] = useState<configService.UpdateChannel>('stable')
@@ -162,6 +165,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
   const [isFetchingDbKey, setIsFetchingDbKey] = useState(false)
   const [isFetchingImageKey, setIsFetchingImageKey] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
+  const [isUpdatingLaunchAtStartup, setIsUpdatingLaunchAtStartup] = useState(false)
   const [appVersion, setAppVersion] = useState('')
   const [message, setMessage] = useState<{ text: string; success: boolean } | null>(null)
   const [showDecryptKey, setShowDecryptKey] = useState(false)
@@ -337,6 +341,7 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       const savedNotificationFilterMode = await configService.getNotificationFilterMode()
       const savedNotificationFilterList = await configService.getNotificationFilterList()
       const savedMessagePushEnabled = await configService.getMessagePushEnabled()
+      const savedLaunchAtStartupStatus = await window.electronAPI.app.getLaunchAtStartupStatus()
       const savedWindowCloseBehavior = await configService.getWindowCloseBehavior()
       const savedQuoteLayout = await configService.getQuoteLayout()
       const savedUpdateChannel = await configService.getUpdateChannel()
@@ -386,6 +391,9 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
       setNotificationFilterMode(savedNotificationFilterMode)
       setNotificationFilterList(savedNotificationFilterList)
       setMessagePushEnabled(savedMessagePushEnabled)
+      setLaunchAtStartup(savedLaunchAtStartupStatus.enabled)
+      setLaunchAtStartupSupported(savedLaunchAtStartupStatus.supported)
+      setLaunchAtStartupReason(savedLaunchAtStartupStatus.reason || '')
       setWindowCloseBehavior(savedWindowCloseBehavior)
       setQuoteLayout(savedQuoteLayout)
       if (savedUpdateChannel) {
@@ -427,6 +435,29 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
   }
 
 
+
+  const handleLaunchAtStartupChange = async (enabled: boolean) => {
+    if (isUpdatingLaunchAtStartup) return
+
+    try {
+      setIsUpdatingLaunchAtStartup(true)
+      const result = await window.electronAPI.app.setLaunchAtStartup(enabled)
+      setLaunchAtStartup(result.enabled)
+      setLaunchAtStartupSupported(result.supported)
+      setLaunchAtStartupReason(result.reason || '')
+
+      if (result.success) {
+        showMessage(enabled ? '已开启开机自启动' : '已关闭开机自启动', true)
+        return
+      }
+
+      showMessage(result.error || result.reason || '设置开机自启动失败', false)
+    } catch (e: any) {
+      showMessage(`设置开机自启动失败: ${e?.message || String(e)}`, false)
+    } finally {
+      setIsUpdatingLaunchAtStartup(false)
+    }
+  }
 
   const refreshWhisperStatus = async (modelDirValue = whisperModelDir) => {
     try {
@@ -1194,6 +1225,39 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
               </button>
             )
           })}
+        </div>
+      </div>
+
+      <div className="divider" />
+
+      <div className="form-group">
+        <label>开机自启动</label>
+        <span className="form-hint">
+          {launchAtStartupSupported
+            ? '开启后，登录系统时会自动启动 WeFlow。'
+            : launchAtStartupReason || '当前环境暂不支持开机自启动。'}
+        </span>
+        <div className="log-toggle-line">
+          <span className="log-status">
+            {isUpdatingLaunchAtStartup
+              ? '保存中...'
+              : launchAtStartupSupported
+                ? (launchAtStartup ? '已开启' : '已关闭')
+                : '当前不可用'}
+          </span>
+          <label className="switch" htmlFor="launch-at-startup-toggle">
+            <input
+              id="launch-at-startup-toggle"
+              className="switch-input"
+              type="checkbox"
+              checked={launchAtStartup}
+              disabled={!launchAtStartupSupported || isUpdatingLaunchAtStartup}
+              onChange={(e) => {
+                void handleLaunchAtStartupChange(e.target.checked)
+              }}
+            />
+            <span className="switch-slider" />
+          </label>
         </div>
       </div>
 
