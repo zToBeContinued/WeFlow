@@ -1457,13 +1457,11 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
             {
               value: 'quote-top' as const,
               label: '引用在上',
-              description: '更接近当前 WeFlow 风格',
               successMessage: '已切换为引用在上样式'
             },
             {
               value: 'quote-bottom' as const,
               label: '正文在上',
-              description: '更接近微信 / 密语风格',
               successMessage: '已切换为正文在上样式'
             }
           ].map(option => {
@@ -1513,7 +1511,6 @@ function SettingsPage({ onClose }: SettingsPageProps = {}) {
                 <div className="quote-layout-card-footer">
                   <div className="quote-layout-card-title-group">
                     <span className="quote-layout-card-title">{option.label}</span>
-                    <span className="quote-layout-card-desc">{option.description}</span>
                   </div>
                 </div>
               </button>

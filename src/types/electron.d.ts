@@ -1005,6 +1005,7 @@ export interface ExportOptions {
   exportVoiceAsText?: boolean
   excelCompactColumns?: boolean
   txtColumns?: string[]
+  fileNamingMode?: 'classic' | 'date-range'
   sessionLayout?: 'shared' | 'per-session'
   sessionNameWithTypePrefix?: boolean
   displayNamePreference?: 'group-nickname' | 'remark' | 'nickname'
