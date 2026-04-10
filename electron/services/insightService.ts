@@ -15,10 +15,8 @@
 
 import https from 'https'
 import http from 'http'
-import fs from 'fs'
-import path from 'path'
 import { URL } from 'url'
-import { app, Notification } from 'electron'
+import { Notification } from 'electron'
 import { ConfigService } from './config'
 import { chatService, ChatSession, Message } from './chatService'
 
@@ -38,6 +36,13 @@ const API_TIMEOUT_MS = 45_000
 
 /** 沉默天数阈值默认值 */
 const DEFAULT_SILENCE_DAYS = 3
+const INSIGHT_CONFIG_KEYS = new Set([
+  'aiInsightEnabled',
+  'aiInsightScanIntervalHours',
+  'dbPath',
+  'decryptKey',
+  'myWxid'
+])
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────
 
@@ -46,32 +51,16 @@ interface TodayTriggerRecord {
   timestamps: number[]
 }
 
-// ─── 桌面日志 ─────────────────────────────────────────────────────────────────
+// ─── 日志 ─────────────────────────────────────────────────────────────────────
 
 /**
- * 将日志同时输出到 console 和桌面上的 weflow-insight.log 文件。
- * 文件名带当天日期，每天自动换一个新文件，旧文件保留。
+ * 仅输出到 console，不落盘到文件。
  */
 function insightLog(level: 'INFO' | 'WARN' | 'ERROR', message: string): void {
-  const now = new Date()
-  const dateStr = now.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
-  const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false })
-  const line = `[${dateStr} ${timeStr}] [${level}] ${message}\n`
-
-  // 同步到 console
   if (level === 'ERROR' || level === 'WARN') {
     console.warn(`[InsightService] ${message}`)
   } else {
     console.log(`[InsightService] ${message}`)
-  }
-
-  // 异步写入桌面日志文件，避免同步磁盘 I/O 阻塞 Electron 主线程事件循环
-  try {
-    const desktopPath = app.getPath('desktop')
-    const logFile = path.join(desktopPath, `weflow-insight-${dateStr}.log`)
-    fs.appendFile(logFile, line, 'utf-8', () => { /* 失败静默处理 */ })
-  } catch {
-    // getPath 失败时静默处理
   }
 }
 
@@ -234,15 +223,64 @@ class InsightService {
   start(): void {
     if (this.started) return
     this.started = true
-    insightLog('INFO', '已启动')
-    this.scheduleSilenceScan()
+    void this.refreshConfiguration('startup')
   }
 
   stop(): void {
+    const hadActiveFlow =
+      this.dbDebounceTimer !== null ||
+      this.silenceScanTimer !== null ||
+      this.silenceInitialDelayTimer !== null ||
+      this.processing
     this.started = false
+    this.clearTimers()
+    this.clearRuntimeCache()
+    this.processing = false
+    if (hadActiveFlow) {
+      insightLog('INFO', '已停止')
+    }
+  }
+
+  async handleConfigChanged(key: string): Promise<void> {
+    const normalizedKey = String(key || '').trim()
+    if (!INSIGHT_CONFIG_KEYS.has(normalizedKey)) return
+
+    // 数据库相关配置变更后，丢弃缓存并强制下次重连
+    if (normalizedKey === 'dbPath' || normalizedKey === 'decryptKey' || normalizedKey === 'myWxid') {
+      this.clearRuntimeCache()
+    }
+
+    await this.refreshConfiguration(`config:${normalizedKey}`)
+  }
+
+  handleConfigCleared(): void {
+    this.clearTimers()
+    this.clearRuntimeCache()
+    this.processing = false
+  }
+
+  private async refreshConfiguration(_reason: string): Promise<void> {
+    if (!this.started) return
+    if (!this.isEnabled()) {
+      this.clearTimers()
+      this.clearRuntimeCache()
+      this.processing = false
+      return
+    }
+    this.scheduleSilenceScan()
+  }
+
+  private clearRuntimeCache(): void {
     this.dbConnected = false
     this.sessionCache = null
     this.sessionCacheAt = 0
+    this.lastActivityAnalysis.clear()
+    this.lastSeenTimestamp.clear()
+    this.todayTriggers.clear()
+    this.todayDate = getStartOfDay()
+  }
+
+  private clearTimers(): void {
     if (this.dbDebounceTimer !== null) {
       clearTimeout(this.dbDebounceTimer)
       this.dbDebounceTimer = null
@@ -255,7 +293,6 @@ class InsightService {
       clearTimeout(this.silenceInitialDelayTimer)
       this.silenceInitialDelayTimer = null
     }
-    insightLog('INFO', '已停止')
   }
 
   /**
@@ -452,9 +489,12 @@ class InsightService {
   // ── 沉默联系人扫描 ──────────────────────────────────────────────────────────
 
   private scheduleSilenceScan(): void {
+    this.clearTimers()
+    if (!this.started || !this.isEnabled()) return
+
     // 等待扫描完成后再安排下一次，避免并发堆积
     const scheduleNext = () => {
-      if (!this.started) return
+      if (!this.started || !this.isEnabled()) return
       const intervalHours = (this.config.get('aiInsightScanIntervalHours') as number) || 4
       const intervalMs = Math.max(0.1, intervalHours) * 60 * 60 * 1000
       insightLog('INFO', `下次沉默扫描将在 ${intervalHours} 小时后执行`)
@@ -474,7 +514,6 @@ class InsightService {
 
   private async runSilenceScan(): Promise<void> {
     if (!this.isEnabled()) {
-      insightLog('INFO', '沉默扫描：AI 见解未启用，跳过')
       return
     }
     if (this.processing) {
@@ -502,6 +541,7 @@ class InsightService {
 
       let silentCount = 0
       for (const session of sessions) {
+        if (!this.isEnabled()) return
         const sessionId = session.username?.trim() || ''
         if (!sessionId || sessionId.endsWith('@chatroom')) continue
         if (sessionId.toLowerCase().includes('placeholder')) continue
@@ -654,6 +694,7 @@ class InsightService {
   }): Promise<void> {
     const { sessionId, displayName, triggerReason, silentDays } = params
     if (!sessionId) return
+    if (!this.isEnabled()) return
 
     const apiBaseUrl = this.config.get('aiInsightApiBaseUrl') as string
     const apiKey = this.config.get('aiInsightApiKey') as string
@@ -747,6 +788,7 @@ class InsightService {
         insightLog('INFO', `模型选择跳过 ${displayName}`)
         return
       }
+      if (!this.isEnabled()) return
 
       const insight = result.slice(0, 120)
       const notifTitle = `见解 · ${displayName}`

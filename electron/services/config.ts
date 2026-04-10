@@ -270,7 +270,9 @@ export class ConfigService {
     const inLockMode = this.isLockMode() && this.unlockPassword
 
     if (ENCRYPTED_BOOL_KEYS.has(key)) {
-      toStore = this.safeEncrypt(String(value)) as ConfigSchema[K]
+      const boolValue = value === true || value === 'true'
+      // `false` 不需要写入 keychain，避免无意义触发 macOS 钥匙串弹窗
+      toStore = (boolValue ? this.safeEncrypt('true') : false) as ConfigSchema[K]
     } else if (ENCRYPTED_NUMBER_KEYS.has(key)) {
       if (inLockMode && LOCKABLE_NUMBER_KEYS.has(key)) {
         toStore = this.lockEncrypt(String(value), this.unlockPassword!) as ConfigSchema[K]
@@ -649,7 +651,7 @@ export class ConfigService {
 
   clearHelloSecret(): void {
     this.store.set('authHelloSecret', '' as any)
-    this.store.set('authUseHello', this.safeEncrypt('false') as any)
+    this.store.set('authUseHello', false as any)
   }
 
   // === 迁移 ===
@@ -658,13 +660,18 @@ export class ConfigService {
     // 将旧版明文 auth 字段迁移为 safeStorage 加密格式
     // 如果已经是 safe: 或 lock: 前缀则跳过
     const rawEnabled: any = this.store.get('authEnabled')
-    if (typeof rawEnabled === 'boolean') {
-      this.store.set('authEnabled', this.safeEncrypt(String(rawEnabled)) as any)
+    if (rawEnabled === true || rawEnabled === 'true') {
+      this.store.set('authEnabled', this.safeEncrypt('true') as any)
+    } else if (rawEnabled === false || rawEnabled === 'false') {
+      // 保持 false 为明文布尔，避免冷启动访问 keychain
+      this.store.set('authEnabled', false as any)
     }
 
     const rawUseHello: any = this.store.get('authUseHello')
-    if (typeof rawUseHello === 'boolean') {
-      this.store.set('authUseHello', this.safeEncrypt(String(rawUseHello)) as any)
+    if (rawUseHello === true || rawUseHello === 'true') {
+      this.store.set('authUseHello', this.safeEncrypt('true') as any)
+    } else if (rawUseHello === false || rawUseHello === 'false') {
+      this.store.set('authUseHello', false as any)
     }
 
     const rawPassword: any = this.store.get('authPassword')

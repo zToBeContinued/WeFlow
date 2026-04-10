@@ -182,7 +182,6 @@ const applyAutoUpdateChannel = (reason: 'startup' | 'settings' = 'startup') => {
   autoUpdater.channel = nextUpdaterChannel
   lastAppliedUpdaterChannel = nextUpdaterChannel
   lastAppliedUpdaterFeedUrl = nextFeedUrl
-  console.log(`[Update](${reason}) 当前版本 ${appVersion}，当前轨道: ${currentTrack}，渠道偏好: ${track}，更新通道: ${autoUpdater.channel}，feed=${nextFeedUrl}，allowDowngrade=${autoUpdater.allowDowngrade}`)
 }
 
 applyAutoUpdateChannel('startup')
@@ -1619,6 +1618,7 @@ function registerIpcHandlers() {
       applyAutoUpdateChannel('settings')
     }
     void messagePushService.handleConfigChanged(key)
+    void insightService.handleConfigChanged(key)
     return result
   })
 
@@ -1644,6 +1644,7 @@ function registerIpcHandlers() {
     }
     configService?.clear()
     messagePushService.handleConfigCleared()
+    insightService.handleConfigCleared()
     return true
   })
 
@@ -1690,13 +1691,6 @@ function registerIpcHandlers() {
 
   ipcMain.handle('app:setLaunchAtStartup', async (_, enabled: boolean) => {
     return applyLaunchAtStartupPreference(enabled === true)
-  })
-
-  ipcMain.handle('app:checkWayland', async () => {
-    if (process.platform !== 'linux') return false;
-
-    const sessionType = process.env.XDG_SESSION_TYPE?.toLowerCase();
-    return Boolean(process.env.WAYLAND_DISPLAY || sessionType === 'wayland');
   })
 
   ipcMain.handle('log:getPath', async () => {
@@ -2572,7 +2566,13 @@ function registerIpcHandlers() {
   ipcMain.handle('image:decrypt', async (_, payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; force?: boolean }) => {
     return imageDecryptService.decryptImage(payload)
   })
-  ipcMain.handle('image:resolveCache', async (_, payload: { sessionId?: string; imageMd5?: string; imageDatName?: string; disableUpdateCheck?: boolean }) => {
+  ipcMain.handle('image:resolveCache', async (_, payload: {
+    sessionId?: string
+    imageMd5?: string
+    imageDatName?: string
+    disableUpdateCheck?: boolean
+    allowCacheIndex?: boolean
+  }) => {
     return imageDecryptService.resolveCachedImage(payload)
   })
   ipcMain.handle(
@@ -2580,13 +2580,14 @@ function registerIpcHandlers() {
     async (
       _,
       payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
-      options?: { disableUpdateCheck?: boolean }
+      options?: { disableUpdateCheck?: boolean; allowCacheIndex?: boolean }
     ) => {
       const list = Array.isArray(payloads) ? payloads : []
       const rows = await Promise.all(list.map(async (payload) => {
         return imageDecryptService.resolveCachedImage({
           ...payload,
-          disableUpdateCheck: options?.disableUpdateCheck === true
+          disableUpdateCheck: options?.disableUpdateCheck === true,
+          allowCacheIndex: options?.allowCacheIndex !== false
         })
       }))
       return { success: true, rows }
@@ -2597,7 +2598,7 @@ function registerIpcHandlers() {
     async (
       _,
       payloads: Array<{ sessionId?: string; imageMd5?: string; imageDatName?: string }>,
-      options?: { allowDecrypt?: boolean }
+      options?: { allowDecrypt?: boolean; allowCacheIndex?: boolean }
     ) => {
     imagePreloadService.enqueue(payloads || [], options)
     return true
@@ -3454,12 +3455,38 @@ app.whenReady().then(async () => {
   }
 
   const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+  const withTimeout = <T>(task: () => Promise<T>, timeoutMs: number): Promise<{ timedOut: boolean; value?: T; error?: string }> => {
+    return new Promise((resolve) => {
+      let settled = false
+      const timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        resolve({ timedOut: true, error: `timeout(${timeoutMs}ms)` })
+      }, timeoutMs)
+
+      task()
+        .then((value) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          resolve({ timedOut: false, value })
+        })
+        .catch((error) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          resolve({ timedOut: false, error: String(error) })
+        })
+    })
+  }
 
   // 初始化配置服务
   updateSplashProgress(5, '正在加载配置...')
   configService = new ConfigService()
   applyAutoUpdateChannel('startup')
   syncLaunchAtStartupPreference()
+  const onboardingDone = configService.get('onboardingDone') === true
+  shouldShowMain = onboardingDone
 
   // 将用户主题配置推送给 Splash 窗口
   if (splashWindow && !splashWindow.isDestroyed()) {
@@ -3472,7 +3499,7 @@ app.whenReady().then(async () => {
   await delay(200)
 
   // 设置资源路径
-  updateSplashProgress(10, '正在初始化...')
+  updateSplashProgress(12, '正在初始化...')
   const candidateResources = app.isPackaged
     ? join(process.resourcesPath, 'resources')
     : join(app.getAppPath(), 'resources')
@@ -3482,13 +3509,13 @@ app.whenReady().then(async () => {
   await delay(200)
 
   // 初始化数据库服务
-  updateSplashProgress(18, '正在初始化...')
+  updateSplashProgress(20, '正在初始化...')
   wcdbService.setPaths(resourcesPath, userDataPath)
   wcdbService.setLogEnabled(configService.get('logEnabled') === true)
   await delay(200)
 
   // 注册 IPC 处理器
-  updateSplashProgress(25, '正在初始化...')
+  updateSplashProgress(28, '正在初始化...')
   registerIpcHandlers()
   chatService.addDbMonitorListener((type, json) => {
     messagePushService.handleDbMonitorChange(type, json)
@@ -3498,12 +3525,54 @@ app.whenReady().then(async () => {
   insightService.start()
   await delay(200)
 
-  // 检查配置状态
-  const onboardingDone = configService.get('onboardingDone')
-  shouldShowMain = onboardingDone === true
+  // 已完成引导时，在 Splash 阶段预热核心数据（联系人、消息库索引等）
+  if (onboardingDone) {
+    updateSplashProgress(34, '正在连接数据库...')
+    const connectWarmup = await withTimeout(() => chatService.connect(), 12000)
+    const connected = !connectWarmup.timedOut && connectWarmup.value?.success === true
+
+    if (!connected) {
+      const reason = connectWarmup.timedOut
+        ? connectWarmup.error
+        : (connectWarmup.value?.error || connectWarmup.error || 'unknown')
+      console.warn('[StartupWarmup] 跳过预热，数据库连接失败:', reason)
+      updateSplashProgress(68, '数据库预热已跳过')
+    } else {
+      const preloadUsernames = new Set<string>()
+
+      updateSplashProgress(44, '正在预加载会话...')
+      const sessionsWarmup = await withTimeout(() => chatService.getSessions(), 12000)
+      if (!sessionsWarmup.timedOut && sessionsWarmup.value?.success && Array.isArray(sessionsWarmup.value.sessions)) {
+        for (const session of sessionsWarmup.value.sessions) {
+          const username = String((session as any)?.username || '').trim()
+          if (username) preloadUsernames.add(username)
+        }
+      }
+
+      updateSplashProgress(56, '正在预加载联系人...')
+      const contactsWarmup = await withTimeout(() => chatService.getContacts(), 15000)
+      if (!contactsWarmup.timedOut && contactsWarmup.value?.success && Array.isArray(contactsWarmup.value.contacts)) {
+        for (const contact of contactsWarmup.value.contacts) {
+          const username = String((contact as any)?.username || '').trim()
+          if (username) preloadUsernames.add(username)
+        }
+      }
+
+      updateSplashProgress(63, '正在缓存联系人头像...')
+      const avatarWarmupUsernames = Array.from(preloadUsernames).slice(0, 2000)
+      if (avatarWarmupUsernames.length > 0) {
+        await withTimeout(() => chatService.enrichSessionsContactInfo(avatarWarmupUsernames), 15000)
+      }
+
+      updateSplashProgress(68, '正在初始化消息库索引...')
+      await withTimeout(() => chatService.warmupMessageDbSnapshot(), 10000)
+    }
+  } else {
+    updateSplashProgress(68, '首次启动准备中...')
+  }
 
   // 创建主窗口（不显示，由启动流程统一控制）
-  updateSplashProgress(30, '正在加载界面...')
+  updateSplashProgress(70, '正在准备主窗口...')
   mainWindow = createWindow({ autoShow: false })
 
   let iconName = 'icon.ico';
@@ -3575,7 +3644,7 @@ app.whenReady().then(async () => {
   )
 
   // 等待主窗口加载完成（真正耗时阶段，进度条末端呼吸光点）
-  updateSplashProgress(30, '正在加载界面...', true)
+  updateSplashProgress(70, '正在准备主窗口...', true)
   await new Promise<void>((resolve) => {
     if (mainWindowReady) {
       resolve()
