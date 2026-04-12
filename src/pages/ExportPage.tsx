@@ -6866,6 +6866,7 @@ function ExportPage() {
     const nextCanExport = Boolean(nextContact && sessionRowByUsername.get(nextContact.username)?.hasSession)
     const previousSelected = Boolean(previousContact && previousCanExport && selectedSessions.has(previousContact.username))
     const nextSelected = Boolean(nextContact && nextCanExport && selectedSessions.has(nextContact.username))
+    const resolvedAvatarUrl = normalizeExportAvatarUrl(matchedSession?.avatarUrl || contact.avatarUrl)
     const rowClassName = [
       'contact-row',
       checked ? 'selected' : '',
@@ -6889,7 +6890,7 @@ function ExportPage() {
             </div>
             <div className="contact-avatar">
               <Avatar
-                src={normalizeExportAvatarUrl(contact.avatarUrl)}
+                src={resolvedAvatarUrl}
                 name={contact.displayName}
                 size="100%"
                 shape="rounded"
